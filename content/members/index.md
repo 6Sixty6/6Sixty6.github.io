@@ -12,3 +12,4 @@ date: 2016-08-24 17:51:42
 * xoreaxeax [[github]](https://github.com/x0reaxeax) | `xorring all the registers`
 * Vollhard [[github]](https://github.com/vollh4rD) | `Design at it finest`
 * anusO1 [[website]](http://anuso1.duckdns.org) | `i am literally mr robot`
+* tahaafarooq [[twitter]](https://twitter.com/tahaafarooq) | `XVIII | Tech Luny`
