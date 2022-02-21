@@ -13,3 +13,4 @@ date: 2016-08-24 17:51:42
 * Vollhard [[github]](https://github.com/vollh4rD) | `Design at it finest`
 * anusO1 [[website]](http://anuso1.duckdns.org) | `i am literally mr robot`
 * tahaafarooq [[twitter]](https://twitter.com/tahaafarooq) | `XVIII | Tech Luny`
+* Maligator [[website]](https://dovidfriedman.com/) | `danger noodle being self danger`
